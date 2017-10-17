@@ -43,10 +43,11 @@ namespace {
 
         glm::vec3 eyePos;	// eye space position used for shading
         glm::vec3 eyeNor;	// eye space normal used for shading, cuz normal will go wrong after perspective transformation
-       // glm::vec3 col;
-        glm::vec2 texcoord0;
+        // glm::vec3 col;
         TextureData* dev_diffuseTex = NULL;
-        // int texWidth, texHeight;
+        VertexAttributeTexcoord texcoord0;
+        int texWidth;
+        int texHeight;
         // ...
     };
 
@@ -64,7 +65,7 @@ namespace {
 
         // glm::vec3 eyePos;	// eye space position used for shading
         // glm::vec3 eyeNor;
-        // VertexAttributeTexcoord texcoord0;
+        VertexAttributeTexcoord texcoord0;
         // TextureData* dev_diffuseTex;
         // ...
     };
@@ -100,12 +101,16 @@ namespace {
 
 // Pipeline Options
 #define LINE_INTERSECTION_RASTERIZATION // If on, will compute line intersections with triangle edges for scan line conversion. If off, will naively check every pixel in the triangle's bounding box
+#define DEPTH_TEST
 
 static std::map<std::string, std::vector<PrimitiveDevBufPointers>> mesh2PrimitivesMap;
 
 
 static int width = 0;
 static int height = 0;
+
+// for mutex
+static int* dev_mutex = NULL;
 
 static int totalNumPrimitives = 0;
 static Primitive *dev_primitives = NULL;
@@ -168,6 +173,9 @@ void rasterizeInit(int w, int h) {
 
     cudaFree(dev_depth);
     cudaMalloc(&dev_depth, width * height * sizeof(int));
+
+    cudaMalloc(&dev_mutex, width * height * sizeof(int));
+    cudaMemset(dev_mutex, 0, width * height * sizeof(int));
 
     checkCUDAError("rasterizeInit");
 }
@@ -625,7 +633,12 @@ void rasterizeSetBuffers(const tinygltf::Scene & scene) {
 
 }
 
-
+// Given a texture and UVs, samples the texture and returns a color using bilinear filtering
+__device__
+glm::vec3 SampleTexture(TextureData *texture, glm::vec2) {
+    //glm::vec2 sample00 = glm::vec2(floor());
+    return glm::vec3();
+}
 
 __global__
 void _vertexTransformAndAssembly(
@@ -656,19 +669,24 @@ void _vertexTransformAndAssembly(
         // Viewport transformation
         vOut.pos.x = (vOut.pos.x * 0.5f + 0.5f) * ((float)width);
         vOut.pos.y = (1.0f - (vOut.pos.y * 0.5f + 0.5f)) * ((float)height);
-        vOut.pos.z = 1.0f - (vOut.pos.z * 0.5f + 0.5f); // remap from [1, -1] to [0, 1]
+        //vOut.pos.z = vOut.pos.z * 0.5f + 0.5f; // remap from [1, -1] to [1, 0]
 
         // Eye space attributes
         vOut.eyePos = glm::vec3(MV * glm::vec4(primitive.dev_position[vid], 1));
         vOut.eyeNor = glm::normalize(MV_normal * primitive.dev_normal[vid]);
+
+        // Texture data
+        vOut.dev_diffuseTex = primitive.dev_diffuseTex;
+        //vOut.texcoord0 = primitive.dev_texcoord0[vid];
+        vOut.texWidth = primitive.diffuseTexWidth;
+        vOut.texHeight = primitive.diffuseTexHeight;
     }
 }
 
 __global__
-void rasterize(int nPrims, Primitive *primitives, Fragment *fragmentBuffer, int width, int height) {
+void rasterize(int nPrims, Primitive *primitives, Fragment *fragmentBuffer, int *depthBuffer, int* mutex_array, int width, int height) {
     int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
     if (tid < nPrims) {
-        //printf("Primitive #%d of %d\n", vid, nPrims);
 
         // Rasterization using scan line conversion
         // 1. Create a line segment struct and a device function for intersecting a horizontal line with a line segment
@@ -682,7 +700,7 @@ void rasterize(int nPrims, Primitive *primitives, Fragment *fragmentBuffer, int 
         // do everything in this function then migrate stuff to helpers later on
 
         // Need an array containing the triangle vertices for helper functions in rasterizeTools.h.
-        const auto primVerts = primitives[tid].v;
+        const auto &primVerts = primitives[tid].v;
         const glm::vec3 triVerts[] = { glm::vec3(primVerts[0].pos), glm::vec3(primVerts[1].pos), glm::vec3(primVerts[2].pos) };
 
         // Compute the bouding box for this primitive
@@ -690,10 +708,10 @@ void rasterize(int nPrims, Primitive *primitives, Fragment *fragmentBuffer, int 
         aabb = getAABBForTriangle(triVerts);
 
         // Transform the aabb's min/max x and y values into pixel coordinates
-        const int aabbMin[] = { glm::clamp((int)floor(aabb.min.x), 0, width - 1),
-                                glm::clamp((int)floor(aabb.min.y), 0, height - 1) };
-        const int aabbMax[] = { glm::clamp((int)ceil(aabb.max.x), 0, width - 1),
-                                glm::clamp((int)ceil(aabb.max.y), 0, height - 1) };
+        const int aabbMin[] = { /*glm::clamp(*/(int)floor(aabb.min.x)/*, 0, width - 1)*/,
+                                /*glm::clamp(*/(int)floor(aabb.min.y)/*, 0, height - 1)*/ };
+        const int aabbMax[] = { /*glm::clamp(*/(int)ceil(aabb.max.x)/*, 0, width - 1)*/,
+                                /*glm::clamp(*/(int)ceil(aabb.max.y)/*, 0, height - 1)*/ };
 
         for (int y = aabbMin[1]; y <= aabbMax[1]; ++y) {
 
@@ -714,7 +732,7 @@ void rasterize(int nPrims, Primitive *primitives, Fragment *fragmentBuffer, int 
 
                 // Compute intersection with line
                 const float slope = (triVerts[(l + 1) % 3].y - triVerts[l].y) / ((triVerts[(l + 1) % 3].x - triVerts[l].x));
-                const float xIsect = (y - triVerts[l].y + slope * triVerts[l].x) / slope;
+                float xIsect = (y - triVerts[l].y + slope * triVerts[l].x) / slope;
 
                 // Ignore intersections outside of bounding boxes
                 if (xIsect < aabbMin[0] || xIsect > aabbMax[0]) continue;
@@ -727,11 +745,55 @@ void rasterize(int nPrims, Primitive *primitives, Fragment *fragmentBuffer, int 
             xIsectMax = aabbMax[0];
             #endif
 
-            // Set the color of all overlapping fragments
+            xIsectMin = glm::clamp(xIsectMin, 0.0f, (float)width - 1);
+            xIsectMax = glm::clamp(xIsectMax, 0.0f, (float)width - 1);
+
+            // Set interpolated values for all overlapping fragments
             for (int p = (int)xIsectMin; p <= (int)xIsectMax; ++p) {
                 const glm::vec3 baryWeights = calculateBarycentricCoordinate(triVerts, glm::vec2(p, y));
                 if (isBarycentricCoordInBounds(baryWeights)) {
-                    fragmentBuffer[p + height * y].color = glm::vec3(1, 0, 0);
+                    // Compute the z value using perspective correct interpolation. Note the depth buffer expects ints
+                    //int zDepth = -(int)(getZAtCoordinate(baryWeights, triVerts) * (float) INT_MAX);
+                    
+                    int zDepth = (int) (INT_MAX / (baryWeights.x / triVerts[0].z + baryWeights.y / triVerts[1].z + baryWeights.z / triVerts[2].z));
+
+                    // Using a mutex + atomic functions to avoid race conditions, compare with and potentially write to the depth buffer
+                    bool shouldSetFragment = true;
+                    
+                    #ifdef DEPTH_TEST
+                    
+                    shouldSetFragment = false;
+                    int *mutex = mutex_array + p + y * width; // pointer arithmetic
+                    // Loop- wait until this thread is able to execute its critical section.
+                    bool isSet = false;
+                    do {
+                        isSet = (atomicCAS(mutex, 0, 1) == 0);
+                        if (isSet) {
+                            if (zDepth < depthBuffer[p + y * width]) {
+                                depthBuffer[p + y * width] = zDepth;
+                                shouldSetFragment = true;
+                            }
+                            *mutex = 0;
+                        }
+                    } while (!isSet);
+                    #endif
+
+                    // Compute the perspective-correct-ly-interpolated fragment parameters
+                    if (shouldSetFragment) {
+                        // UVs
+                        /*fragmentBuffer[p + y * width].texcoord0 = ((float)(zDepth / (float) INT_MAX)) * ((primVerts[0].texcoord0 * baryWeights.x / triVerts[0].z +
+                                                                                                            primVerts[1].texcoord0 * baryWeights.y / triVerts[1].z +
+                                                                                                            primVerts[2].texcoord0 * baryWeights.z / triVerts[2].z));*/
+
+                        fragmentBuffer[p + y * width].color = glm::normalize(((float)(zDepth / (float) INT_MAX)) * ((primVerts[0].eyeNor * baryWeights.x / triVerts[0].z +
+                                                                                                                     primVerts[1].eyeNor * baryWeights.y / triVerts[1].z +
+                                                                                                                     primVerts[2].eyeNor * baryWeights.z / triVerts[2].z)));
+
+                        
+                        //fragmentBuffer[p + y * width].color = glm::vec3(((float)zDepth) / ((float)INT_MAX));
+                        //fragmentBuffer[p + y * width].color *= 1.0000000001f;
+                        //fragmentBuffer[p + y * width].color = glm::vec3(1, 0, 0);
+                    }
                 }
             }
         }
@@ -757,7 +819,6 @@ void _primitiveAssembly(int numIndices, int curPrimitiveBeginId, Primitive* dev_
             dev_primitives[pid + curPrimitiveBeginId].v[iid % (int)primitive.primitiveType]
                 = primitive.dev_verticesOut[primitive.dev_indices[iid]];
         }
-
 
         // TODO: other primitive types (point, line)
     }
@@ -814,14 +875,15 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     // Kernel parameters
     int blockSize1d(totalNumPrimitives);
     dim3 blockCount1d((totalNumPrimitives + blockSize1d - 1) / blockSize1d);
-
-    rasterize << <blockSize1d, blockCount1d >> > (totalNumPrimitives, dev_primitives, dev_fragmentBuffer, width, height);
+    //cudaMemset(dev_mutex, 0, sizeof(int)); // Clear mutex
+    rasterize << <blockSize1d, blockCount1d >> > (totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth, dev_mutex, width, height);
     cudaDeviceSynchronize();
     checkCUDAError("Rasterization");
 
     // Copy depthbuffer colors into framebuffer
     render << <blockCount2d, blockSize2d >> > (width, height, dev_fragmentBuffer, dev_framebuffer);
     checkCUDAError("fragment shader");
+
     // Copy framebuffer into OpenGL buffer for OpenGL previewing
     sendImageToPBO << <blockCount2d, blockSize2d >> > (pbo, width, height, dev_framebuffer);
     checkCUDAError("copy render result to pbo");

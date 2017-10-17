@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.0)
 
 project(cis565_rasterizer)
 
+# CUDA linker options
+find_package(Threads REQUIRED)
+find_package(CUDA 8.0 REQUIRED)
+set(CUDA_ATTACH_VS_BUILD_RULE_TO_CUDA_FILE ON)
+set(CUDA_SEPARABLE_COMPILATION ON)
+
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake" ${CMAKE_MODULE_PATH})
 
 # Set up include and lib paths
@@ -74,12 +80,6 @@ endif()
 if (WIN32)
     list(APPEND CORELIBS legacy_stdio_definitions.lib)
 endif()
-
-# CUDA linker options
-find_package(Threads REQUIRED)
-find_package(CUDA 8.0 REQUIRED)
-set(CUDA_ATTACH_VS_BUILD_RULE_TO_CUDA_FILE ON)
-set(CUDA_SEPARABLE_COMPILATION ON)
 
 #add_subdirectory(stream_compaction)  # TODO: uncomment if using your own stream compaction
 add_subdirectory(src)
