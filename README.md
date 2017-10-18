@@ -26,12 +26,12 @@ with the edges of the triangle, and shading the overlapping fragments.
 
 Here is an image of the given Duck GLTF model rasterized with texture mapping:
 
-![](/renders/duck_noaa.png)
+![](/renders/duck_noaa.PNG)
 
 For comparison, here is the same Duck but rendered with SSAA (supersampling antialiasing). This process involves simply rendering to an image of higher resolution than the 
 screen, then downsampling that information into the final image:
 
-![](/renders/duck_ssaa.png)
+![](/renders/duck_ssaa.PNG)
 
 ### Performance Analysis
 
