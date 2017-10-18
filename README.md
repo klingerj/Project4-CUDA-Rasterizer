@@ -5,13 +5,44 @@ CUDA Rasterizer
 
 **University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
-* (TODO) YOUR NAME HERE
-* Tested on: (TODO) Windows 22, i7-2222 @ 2.22GHz 22GB, GTX 222 222MB (Moore 2222 Lab)
+* Joseph Klinger
+* Tested on: Windows 10, i5-7300HQ (4 CPUs) @ ~2.50GHz, GTX 1050 6030MB (Personal Machine)
 
-### (TODO: Your README)
+### README
 
-*DO NOT* leave the README to the last minute! It is a crucial part of the
-project, and we will not be able to grade you without a good README.
+This week, I took on the task of implementing a rasterizer in CUDA. I have already written a CPU rasterizer (almost 2 years ago, in the introductory
+graphics course CIS 460), but implementing a basic graphics pipeline on the GPU was a different beast.
+
+The features included in this rasterizer are:
+- Texture mapping
+- Supersampling Antialiasing
+- Color interpolation across triangles
+
+[Demo video here.](https://vimeo.com/238849683)
+
+Rasterization, in very brief summary, is taking a 3d shape and deciding how to color the pixels that the object overlaps. In this project, that involves transforming
+the input GLTF models' vertex data, creating triangles from that data, projecting the triangles into view->clip->NDC/screen->viewport space, computing line intersection
+with the edges of the triangle, and shading the overlapping fragments.
+
+Here is an image of the given Duck GLTF model rasterized with texture mapping:
+
+![](/renders/duck_noaa.png)
+
+For comparison, here is the same Duck but rendered with SSAA (supersampling antialiasing). This process involves simply rendering to an image of higher resolution than the 
+screen, then downsampling that information into the final image:
+
+![](/renders/duck_ssaa.png)
+
+### Performance Analysis
+
+
+
+
+
+
+
+
+
 
 
 ### Credits

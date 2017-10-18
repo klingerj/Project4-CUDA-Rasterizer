@@ -161,9 +161,10 @@ glm::vec3 BilinearFilter(const glm::vec3 color00, const glm::vec3 color01, const
 // Return the tightly packed chars as a color with its elements on the range [0, 1]
 __device__
 glm::vec3 SampleTexture(const TextureData *texture, const int index) {
-    const int r = texture[index * 3];
-    const int g = texture[index * 3 + 1];
-    const int b = texture[index * 3 + 2];
+    const int index_x3 = index * 3;
+    const int r = texture[index_x3];
+    const int g = texture[index_x3 + 1];
+    const int b = texture[index_x3 + 2];
     return glm::vec3(r, g, b) * 0.00392156862f; // 1 / 255
 }
 
@@ -175,14 +176,14 @@ glm::vec3 GetTextureColor(const TextureData *texture, const glm::vec2 uv, const 
     const glm::vec2 texIndex = uv * glm::vec2(width, height);
 
     const glm::vec2 sample00 = floor(texIndex);
-    const glm::vec2 sample01 = glm::vec2(ceil(texIndex.x), floor(texIndex.y));
-    const glm::vec2 sample10 = glm::vec2(floor(texIndex.x), ceil(texIndex.y));
+    const glm::vec2 sample01 = glm::vec2(sample00.x + 1.0f, floor(texIndex.y));
+    const glm::vec2 sample10 = glm::vec2(floor(texIndex.x), sample01.y + 1.0f);
     const glm::vec2 sample11 = ceil(texIndex);
 
     const glm::vec2 weights = glm::vec2((texIndex.x - sample10.x) / (sample01.x - sample10.x),
                                         (texIndex.y - sample01.y) / (sample10.y - sample01.y));
     
-    // Sample the colors
+    // Sample the color
     const glm::vec3 color00 = SampleTexture(texture, ((int)sample00.x) + ((int)sample00.y) * width);
     const glm::vec3 color01 = SampleTexture(texture, ((int)sample01.x) + ((int)sample01.y) * width);
     const glm::vec3 color10 = SampleTexture(texture, ((int)sample10.x) + ((int)sample10.y) * width);
@@ -226,14 +227,14 @@ void render(const int w, const int h, const Fragment *fragmentBuffer, glm::vec3 
     if (x < w && y < h) {
         const Fragment &fragment = fragmentBuffer[index];
 
-        // Lighting
+        // Lighting - Lambertian Shading
         const glm::vec3 lightVec = glm::normalize(glm::vec3(1.0f, 1.0f, 0.0f));
         const float lightIntensity = glm::dot(lightVec, fragment.eyeNor) * 0.5f + 0.5f;
 
         #ifdef TEXTURE_MAPPING
         if (fragment.dev_diffuseTex) {
             const glm::vec3 texCol = GetTextureColor(fragment.dev_diffuseTex, fragment.texcoord0, fragment.diffuseTexWidth, fragment.diffuseTexHeight);
-            framebuffer[index] = texCol *lightIntensity;
+            framebuffer[index] = texCol * lightIntensity;
         } else {
             framebuffer[index] = fragment.color;
         }
