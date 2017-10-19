@@ -1020,14 +1020,11 @@ void rasterize(uchar4 *pbo, const glm::mat4 & MVP, const glm::mat4 & MV, const g
     #else
     cudaMemset(dev_fragmentBuffer, 0, width * height * sizeof(Fragment));
     initDepth << <blockCount2d, blockSize2d >> > (width, height, dev_depth);
-    timeStartCpu = std::chrono::high_resolution_clock::now();
+    
     rasterize << <blockSize1d, blockCount1d >> > (totalNumPrimitives, dev_primitives, dev_fragmentBuffer, dev_depth, dev_mutex, width, height);
     cudaDeviceSynchronize();
     checkCUDAError("Rasterization");
-    timeEndCpu = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double, std::milli> duration = timeEndCpu - timeStartCpu;
-    prevElapsedTime = static_cast<decltype(prevElapsedTime)>(duration.count());
-    printf("%f\n", prevElapsedTime);
+    
     render << <blockCount2d, blockSize2d >> > (width, height, dev_fragmentBuffer, dev_framebuffer);
     cudaDeviceSynchronize();
     checkCUDAError("fragment shader");
