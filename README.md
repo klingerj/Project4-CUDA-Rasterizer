@@ -37,13 +37,14 @@ screen, then downsampling that information into the final image:
 
 I benchmarked my rasterizer's performance using the Duck GLFT model, which has ~4000 tris, at a close up and far zoom level. Here are the results:
 
-![](/renders/graph1.png)
+![](/renders/graph1.PNG)
 
-![](/renders/graph2.png)
+![](/renders/graph2.PNG)
 
 As we can see, rasterization is by far the most expensive operation compared to vertex transform, primitive assembly, fragment shading and downsampling.
 Additionally, SSAA, as expected, makes the rasterization process much more costly because we have to render to an image of twice the size of the final,
-so more fragments must be computed and be checked with the depth test.
+so more fragments must be computed and be checked with the depth test. Lastly, clearly far zoom makes the rasterization process more costly as there are
+simply more fragments overlapping each triangle.
 
 One experiment I did try was comparing rasterization performance when computing line intersection with the triangle edges as opposed to simply checking all
 fragments within the bounding box of the primitive. As expected, it did improve performance, as we were able to avoid computing barycentric weights for every
